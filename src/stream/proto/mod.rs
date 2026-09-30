@@ -958,11 +958,36 @@ impl MoonlightStreamSetup {
         };
 
         // -- Select Video Format
-        // Av1 is not supported in this implementation currently
         // See https://github.com/moonlight-stream/moonlight-common-c/blob/7b026e77be62175104640e7e722b758df6d3d0d7/src/RtspConnection.c#L1090-L1136
+        // Lightning fork: AV1 first, then HEVC, then H264, as moonlight-common-c does. The frame
+        // handling and the SDP already knew AV1; only this choice left it out.
         let negotiated_video_format;
 
-        if self
+        let server_formats = self.client_config.server_codec_mode_support;
+        let client_formats = self.client_settings.supported_video_formats;
+        let both_av1 = |server: ServerCodecModeSupport, client: VideoFormats| {
+            server_formats.contains(server) && client_formats.contains(client)
+        };
+
+        if server_formats.intersects(ServerCodecModeSupport::MASK_AV1)
+            && client_formats.intersects(VideoFormats::MASK_AV1)
+            && (both_av1(ServerCodecModeSupport::AV1_HIGH10_444, VideoFormats::AV1_HIGH10_444)
+                || both_av1(ServerCodecModeSupport::AV1_MAIN10, VideoFormats::AV1_MAIN10)
+                || both_av1(ServerCodecModeSupport::AV1_HIGH8_444, VideoFormats::AV1_HIGH8_444)
+                || both_av1(ServerCodecModeSupport::AV1_MAIN8, VideoFormats::AV1_MAIN8))
+        {
+            negotiated_video_format =
+                if both_av1(ServerCodecModeSupport::AV1_HIGH10_444, VideoFormats::AV1_HIGH10_444) {
+                    VideoFormat::Av1High10_444
+                } else if both_av1(ServerCodecModeSupport::AV1_MAIN10, VideoFormats::AV1_MAIN10) {
+                    VideoFormat::Av1Main10
+                } else if both_av1(ServerCodecModeSupport::AV1_HIGH8_444, VideoFormats::AV1_HIGH8_444)
+                {
+                    VideoFormat::Av1High8_444
+                } else {
+                    VideoFormat::Av1Main8
+                };
+        } else if self
             .client_config
             .server_codec_mode_support
             .intersects(ServerCodecModeSupport::MASK_HEVC)
